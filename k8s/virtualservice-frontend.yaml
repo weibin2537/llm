@@ -1,0 +1,16 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: frontend-service
+  namespace: ingress-nginx
+spec:
+  hosts:
+  - "myapp.localss"  # 这里与 Gateway 中定义的相同
+  gateways:
+  - istio-system/frontend-gateway
+  http:
+  - route:
+    - destination:
+        host: frontend-service
+        port:
+          number: 80

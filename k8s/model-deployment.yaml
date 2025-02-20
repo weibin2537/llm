@@ -1,0 +1,22 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-deployment
+  namespace: ingress-nginx  # 修改为 ingress-nginx 命名空间
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model
+  template:
+    metadata:
+      labels:
+        app: model
+    spec:
+      containers:
+      - name: model
+        image: binweis/chatbox:model-image  # 替换为实际的大模型镜像
+        ports:
+        - containerPort: 11434
+

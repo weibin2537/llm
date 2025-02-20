@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: model-service
+  namespace: ingress-nginx
+spec:
+  hosts:
+  - "myapp.localss"
+  gateways:
+  - istio-system/myapp-gateway  # 使用之前定义的 Gateway
+  http:
+  - match:
+    - uri:
+        exact: "/api/generate"  # 根据实际情况修改路径
+    route:
+    - destination:
+        host: model-service
+        port:
+          number: 11434

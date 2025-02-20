@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: backend-service
+  namespace: ingress-nginx
+spec:
+  hosts:
+  - "myapp.localss"
+  gateways:
+  - istio-system/myapp-gateway  # 使用之前定义的 Gateway
+  http:
+  - match:
+    - uri:
+        exact: "/chat"  # 确保与后端服务的 API 路径匹配
+    route:
+    - destination:
+        host: backend-service
+        port:
+          number: 8000

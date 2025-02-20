@@ -1,0 +1,32 @@
+version: '3'
+services:
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    networks:
+      - cicd-network
+    volumes:
+      - jenkins_home:/var/jenkins_home
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+
+  jenkins-agent:
+    image: jenkins/inbound-agent:latest
+    networks:
+      - cicd-network
+    depends_on:
+      - jenkins
+    environment:
+      - JENKINS_URL=http://jenkins:8080
+      - JENKINS_AGENT_NAME=agent
+
+volumes:
+  jenkins_home:
+    driver: local
+
+networks:
+  cicd-network:
+    driver: bridge
