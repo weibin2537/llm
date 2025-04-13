@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>存储过程关系3D可视化</title>
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --secondary-color: #FF9800;
+            --background: #1A1A1A;
+            --node-label-bg: rgba(33, 150, 243, 0.9); /* 主色半透明 */
+            --tooltip-bg: rgba(26, 26, 26, 0.95);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        .control-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+
+        .filter-group {
+            margin-bottom: 10px;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: var(--tooltip-bg);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            pointer-events: none;
+            max-width: 300px;
+            font-size: 14px;
+            line-height: 1.4;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        /* 节点标签样式 */
+        .node-label {
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            pointer-events: none;
+            /* 3D空间定位 */
+            transform: translate3d(-50%, calc(-100% - 8px), 0);
+            padding: 6px 10px;
+            border-radius: 4px;
+            color: white;
+            transition: opacity 0.3s;
+        }
+
+        .node-label.proc { background: var(--primary-color); }
+        .node-label.table { background: var(--secondary-color); }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+
+<body>
+    <div class="control-panel">
+        <div class="filter-group">
+            <select id="relationType" class="form-control">
+                <option value="calls">调用关系</option>
+                <option value="tables">表关系</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <input type="text" id="procFilter" placeholder="过滤存储过程..." class="form-control">
+        </div>
+        <div class="filter-group">
+            <input type="text" id="tableFilter" placeholder="过滤表..." class="form-control">
+        </div>
+    </div>
+
+    <div id="container"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script type="module">
+        const CONFIG = {
+            NODE: {
+                PROC: { color: 0x4CAF50, size: 0.8, labelBg: '#4CAF50' },
+                TABLE: { color: 0xFF5722, size: 0.7, labelBg: '#FF5722' }
+            },
+            LINK: { COLOR: 0x9E9E9E, WIDTH: 1.5 },
+            CAMERA_DISTANCE: 20,
+            TOOLTIP_DELAY: 200
+        };
+
+        class SceneManager {
+            constructor(container) {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                this.labelRenderer = new THREE.CSS2DRenderer();
+                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                this.container = container;
+
+                this.init();
+            }
+
+            init() {
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setClearColor(CONFIG.background, 1);
+                this.container.appendChild(this.renderer.domElement);
+
+                this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+                this.container.appendChild(this.labelRenderer.domElement);
+
+                this.camera.position.set(CONFIG.CAMERA_DISTANCE, CONFIG.CAMERA_DISTANCE, CONFIG.CAMERA_DISTANCE);
+                this.camera.lookAt(this.scene.position);
+
+                this.initLights();
+                this.controls.enableDamping = true;
+            }
+
+            initLights() {
+                const mainLight = new THREE.DirectionalLight(0xFFFFFF, 1.2);
+                mainLight.position.set(2, 3, 4).normalize();
+                const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.5);
+                this.scene.add(mainLight, ambientLight);
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.controls.update();
+                this.renderer.render(this.scene, this.camera);
+                this.labelRenderer.render(this.scene, this.camera);
+            }
+        }
+
+        class NodeSystem {
+            constructor(scene) {
+                this.scene = scene;
+                this.nodes = new Map();
+                this.geometryCache = {
+                    sphere: new THREE.SphereBufferGeometry(CONFIG.NODE.PROC.size, 32, 32),
+                    box: new THREE.BoxBufferGeometry(
+                        CONFIG.NODE.TABLE.size,
+                        CONFIG.NODE.TABLE.size,
+                        CONFIG.NODE.TABLE.size * 0.6
+                    )
+                };
+            }
+
+            createNode(id, type) {
+                const geo = type === 'proc' ? this.geometryCache.sphere : this.geometryCache.box;
+                const mat = new THREE.MeshStandardMaterial({
+                    color: type === 'proc' ? CONFIG.NODE.PROC.color : CONFIG.NODE.TABLE.color,
+                    metalness: 0.3,
+                    roughness: 0.1,
+                    emissive: 0x222222
+                });
+
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.set(
+                    (Math.random() - 0.5) * 10,
+                    (Math.random() - 0.5) * 10,
+                    (Math.random() - 0.5) * 10
+                );
+                mesh.userData = { id, type, tooltipTimeout: null };
+
+                // 增强型标签（作为节点子对象）
+                const label = this.createLabel(id, type);
+                label.position.set(0, type === 'proc' ? 1.2 : 1.5, 0); // 差异化偏移
+                mesh.add(label); // 关键：标签作为节点子对象
+
+                // 交互事件
+                mesh.addEventListener('mouseover', (e) => this.showTooltip(e.object));
+                mesh.addEventListener('mouseout', () => this.hideTooltip(mesh));
+                mesh.addEventListener('click', () => this.highlightNode(mesh));
+
+                this.nodes.set(id, { mesh, label });
+                this.scene.add(mesh);
+                return mesh;
+            }
+
+            createLabel(id, type) {
+                const div = document.createElement('div');
+                div.className = `node-label ${type}`;
+                div.innerHTML = `<strong>${id}</strong><br><small>${type.toUpperCase()}</small>`;
+                div.style.backgroundColor = type === 'proc' ? CONFIG.NODE.PROC.labelBg : CONFIG.NODE.TABLE.labelBg;
+                return new THREE.CSS2DObject(div);
+            }
+
+            showTooltip(node) {
+                clearTimeout(node.userData.tooltipTimeout);
+                node.userData.tooltipTimeout = setTimeout(() => {
+                    const tooltip = document.getElementById('tooltip');
+                    const pos = node.getWorldPosition(new THREE.Vector3());
+                    const mousePos = this.sceneManager.camera.projectVector(pos);
+
+                    tooltip.style.left = `${(mousePos.x * window.innerWidth) + 10}px`;
+                    tooltip.style.top = `${(mousePos.y * window.innerHeight) - 30}px`;
+                    tooltip.innerHTML = `
+                        <h4>${node.userData.id}</h4>
+                        <p>类型：${node.userData.type.toUpperCase()}</p>
+                        <p>坐标：(${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})</p>
+                    `;
+                    tooltip.style.display = 'block';
+                }, CONFIG.TOOLTIP_DELAY);
+            }
+
+            hideTooltip(node) {
+                clearTimeout(node.userData.tooltipTimeout);
+                document.getElementById('tooltip').style.display = 'none';
+            }
+
+            highlightNode(node) {
+                this.nodes.forEach(n => {
+                    n.mesh.material.opacity = n.mesh === node ? 1 : 0.6;
+                    n.label.style.opacity = n.mesh === node ? 1 : 0.7;
+                });
+            }
+
+            clear() {
+                this.nodes.forEach(node => {
+                    node.mesh.traverse(child => child.clear());
+                    this.scene.remove(node.mesh);
+                });
+                this.nodes.clear();
+            }
+        }
+        class LinkSystem {
+            constructor(scene) {
+                this.scene = scene;
+                this.links = new Map();
+            }
+
+            createLink(source, target) {
+                const geometry = new THREE.BufferGeometry().setFromPoints([
+                    source.position.clone(),
+                    target.position.clone()
+                ]);
+                const material = new THREE.LineBasicMaterial({
+                    color: CONFIG.LINK.COLOR,
+                    linewidth: CONFIG.LINK.WIDTH,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const line = new THREE.Line(geometry, material);
+                this.links.set(`${source.userData.id}-${target.userData.id}`, line);
+                this.scene.add(line);
+                return line;
+            }
+
+            clear() {
+                this.links.forEach(link => this.scene.remove(link));
+                this.links.clear();
+            }
+        }
+        class VisualizationApp {
+            constructor() {
+                this.sceneManager = new SceneManager(document.getElementById('container'));
+                this.nodeSystem = new NodeSystem(this.sceneManager.scene);
+                // 修复后：LinkSystem已定义
+                this.linkSystem = new LinkSystem(this.sceneManager.scene); 
+                this.initEvents();
+                this.loadData();
+                this.sceneManager.animate();
+            }
+
+            initEvents() {
+                document.getElementById('relationType').addEventListener('change', () => this.loadData());
+                document.getElementById('procFilter').addEventListener('input', () => this.loadData());
+                window.addEventListener('resize', () => this.onResize());
+            }
+
+            async loadData() {
+                const relation = document.getElementById('relationType').value;
+                const procFilter = document.getElementById('procFilter').value.trim();
+
+                this.nodeSystem.clear();
+                this.linkSystem.clear(); // 新增：清理连接线
+
+                try {
+                    const data = await fetch(`http://localhost:8000/api/graph3d?relation=${relation}&proc_name=${procFilter}`).then(r => r.json());
+                    data.nodes.forEach(n => this.nodeSystem.createNode(n.id, n.type));
+                    data.links.forEach(l => { // 新增：创建连接线
+                        const source = this.nodeSystem.nodes.get(l.source)?.mesh;
+                        const target = this.nodeSystem.nodes.get(l.target)?.mesh;
+                        if (source && target) this.linkSystem.createLink(source, target);
+                    });
+                } catch (e) {
+                    console.error('加载失败:', e);
+                }
+            }
+
+		onResize() {
+                this.sceneManager.camera.aspect = window.innerWidth / window.innerHeight;
+                this.sceneManager.camera.updateProjectionMatrix();
+                this.sceneManager.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.sceneManager.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        }
+
+        new VisualizationApp();
+    </script>
+</body>
+
+</html>
+
+<!-- <!DOCTYPE html>
+<html>
+<head>
+    <title>存储过程关系可视化</title>
+    <style>
+        /* 保持原有样式不变 */
+    </style>
+</head>
+<body>
+    <div class="control-panel">
+        <select id="relationType">
+            <option value="calls">调用关系</option>
+            <option value="tables">表关系</option>
+        </select>
+        <input type="text" id="filter" placeholder="过滤节点..." disabled>
+        <span id="loading" style="color: #666; margin-left: 10px;">加载中...</span>
+    </div>
+    <div id="canvas-container"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api/graph3d'; // 后端接口地址
+        let canvas, ctx, nodes = [], links = [];
+        let isLoading = false;
+
+        // 初始化
+        async function init() {
+            canvas = document.createElement('canvas');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx = canvas.getContext('2d');
+            document.getElementById('canvas-container').appendChild(canvas);
+            
+            // 绑定事件（带防抖）
+            document.getElementById('relationType').addEventListener('change', debounce(fetchData, 300));
+            document.getElementById('filter').addEventListener('input', debounce(fetchData, 300));
+            
+            // 首次加载
+            await fetchData();
+        }
+
+        // 数据获取
+        async function fetchData() {
+            if (isLoading) return;
+            isLoading = true;
+            
+            try {
+                // 显示加载状态
+                document.getElementById('loading').style.display = 'inline-block';
+                document.querySelectorAll('select, input').forEach(el => el.disabled = true);
+
+                const params = new URLSearchParams({
+                    relation: document.getElementById('relationType').value,
+                    filter: document.getElementById('filter').value.trim()
+                });
+                const response = await fetch(`${API_URL}?${params}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const data = await response.json();
+                nodes = data.nodes.map(n => ({ ...n, x: n.x || 200, y: n.y || 150 })); // 初始化位置
+                links = data.links;
+                
+                render();
+            } catch (error) {
+                console.error('API请求失败:', error);
+                showError('数据加载失败，请检查接口连接');
+            } finally {
+                isLoading = false;
+                document.getElementById('loading').style.display = 'none';
+                document.querySelectorAll('select, input').forEach(el => el.disabled = false);
+            }
+        }
+
+        // 渲染函数
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制连接线
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1.5;
+            links.forEach(link => {
+                const s = nodes.find(n => n.id === link.source);
+                const t = nodes.find(n => n.id === link.target);
+                if (s && t) drawLine(s, t);
+            });
+
+            // 绘制节点
+            nodes.forEach(node => {
+                const { id, type, x, y } = node;
+                const size = type === 'proc' ? 32 : 28;
+                
+                // 节点背景
+                ctx.beginPath();
+                ctx[type === 'proc' ? 'arc' : 'rect'](x, y, size, size, 0, Math.PI * 2);
+                ctx.fillStyle = type === 'proc' ? '#4CAF50' : '#FF5722';
+                ctx.fill();
+                
+                // 节点边框
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#fff';
+                ctx.stroke();
+                
+                // 标签文本（带阴影）
+                ctx.font = '14px Segoe UI';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.fillStyle = '#222';
+                ctx.fillText(id, x, y + size + 8);
+                ctx.font = '12px Segoe UI';
+                ctx.fillText(type.toUpperCase(), x, y + size + 22);
+            });
+        }
+
+        // 辅助函数
+        function drawLine(s, t) {
+            ctx.beginPath();
+            ctx.moveTo(s.x, s.y);
+            ctx.lineTo(t.x, t.y);
+            ctx.stroke();
+        }
+
+        function showError(msg) {
+            alert(msg); // 生产环境建议使用UI组件提示
+        }
+
+        // 防抖函数
+        function debounce(func, delay) {
+            let timer;
+            return (...args) => {
+                clearTimeout(timer);
+                timer = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
+
+        // 初始化应用
+        init();
+    </script>
+</body>
+</html> -->

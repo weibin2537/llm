@@ -1,0 +1,19 @@
+{
+    "PROC_LOGIN": {
+      "reads": ["USER_INFO"],
+      "writes": ["LOGIN_LOG"]
+    },
+    "PROC_AUTH": {
+      "reads": ["USER_ROLE", "PERMISSIONS"],
+      "writes": []
+    },
+    "PROC_LOGGER": {
+      "reads": [],
+      "writes": ["AUDIT_LOG"]
+    },
+    "PROC_DB_VALIDATE": {
+      "reads": ["USER_INFO"],
+      "writes": []
+    }
+  }
+  

@@ -1,0 +1,7 @@
+{
+    "PROC_LOGIN": ["PROC_AUTH", "PROC_LOGGER"],
+    "PROC_AUTH": ["PROC_DB_VALIDATE"],
+    "PROC_LOGGER": [],
+    "PROC_DB_VALIDATE": []
+  }
+  
