@@ -61,19 +61,48 @@
             white-space: nowrap;
             pointer-events: none;
             /* 3D空间定位 */
-            transform: translate3d(-50%, calc(-100% - 8px), 0);
+            transform: translate3d(-50%, -50%, 0);
             padding: 6px 10px;
             border-radius: 4px;
             color: white;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid white;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
             transition: opacity 0.3s;
         }
 
-        .node-label.proc { background: var(--primary-color); }
-        .node-label.table { background: var(--secondary-color); }
+        .node-label.proc { background-color: rgba(76, 175, 80, 0.9); }
+        .node-label.table { background-color: rgba(255, 87, 34, 0.9); }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        /* 应用动画到节点和标签 */
+        .node-label {
+            animation: fadeIn 0.5s ease-in-out;
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            pointer-events: none;
+            /* 3D空间定位 */
+            transform: translate3d(-50%, -50%, 0);
+            padding: 6px 10px;
+            border-radius: 4px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid white;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+            transition: opacity 0.3s;
+        }
+
+        .node-label.proc { background-color: rgba(76, 175, 80, 0.9); }
+        .node-label.table { background-color: rgba(255, 87, 34, 0.9); }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+</head>
 
 <body>
     <div class="control-panel">
@@ -102,7 +131,8 @@
             },
             LINK: { COLOR: 0x9E9E9E, WIDTH: 1.5 },
             CAMERA_DISTANCE: 20,
-            TOOLTIP_DELAY: 200
+            TOOLTIP_DELAY: 200,
+            background: 0x1A1A1A  // 添加背景色设置
         };
 
         class SceneManager {
@@ -122,7 +152,11 @@
                 this.renderer.setClearColor(CONFIG.background, 1);
                 this.container.appendChild(this.renderer.domElement);
 
+                // 修改CSS2DRenderer的样式和定位
                 this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+                this.labelRenderer.domElement.style.position = 'absolute';
+                this.labelRenderer.domElement.style.top = '0';
+                this.labelRenderer.domElement.style.pointerEvents = 'none';
                 this.container.appendChild(this.labelRenderer.domElement);
 
                 this.camera.position.set(CONFIG.CAMERA_DISTANCE, CONFIG.CAMERA_DISTANCE, CONFIG.CAMERA_DISTANCE);
@@ -148,12 +182,13 @@
         }
 
         class NodeSystem {
-            constructor(scene) {
+            constructor(scene, sceneManager) {
                 this.scene = scene;
+                this.sceneManager = sceneManager;
                 this.nodes = new Map();
                 this.geometryCache = {
-                    sphere: new THREE.SphereBufferGeometry(CONFIG.NODE.PROC.size, 32, 32),
-                    box: new THREE.BoxBufferGeometry(
+                    sphere: new THREE.SphereGeometry(CONFIG.NODE.PROC.size, 32, 32),
+                    box: new THREE.BoxGeometry(
                         CONFIG.NODE.TABLE.size,
                         CONFIG.NODE.TABLE.size,
                         CONFIG.NODE.TABLE.size * 0.6
@@ -178,42 +213,47 @@
                 );
                 mesh.userData = { id, type, tooltipTimeout: null };
 
-                // 增强型标签（作为节点子对象）
-                const label = this.createLabel(id, type);
-                label.position.set(0, type === 'proc' ? 1.2 : 1.5, 0); // 差异化偏移
-                mesh.add(label); // 关键：标签作为节点子对象
+                // 创建更明显的标签
+                const labelDiv = document.createElement('div');
+                labelDiv.className = `node-label ${type}`;
+                // 显示更简洁的ID（如果ID太长则截断）
+                const shortId = id.length > 15 ? id.substring(0, 12) + '...' : id;
+                labelDiv.innerHTML = shortId;
+                
+                const label = new THREE.CSS2DObject(labelDiv);
+                // 调整标签位置，确保在节点上方
+                label.position.set(0, type === 'proc' ? 1.5 : 1.2, 0);
+                mesh.add(label);
 
                 // 交互事件
-                mesh.addEventListener('mouseover', (e) => this.showTooltip(e.object));
+                mesh.addEventListener('mouseover', (event) => this.showTooltip(mesh));
                 mesh.addEventListener('mouseout', () => this.hideTooltip(mesh));
                 mesh.addEventListener('click', () => this.highlightNode(mesh));
 
-                this.nodes.set(id, { mesh, label });
+                this.nodes.set(id, { mesh, label: labelDiv });
                 this.scene.add(mesh);
                 return mesh;
-            }
-
-            createLabel(id, type) {
-                const div = document.createElement('div');
-                div.className = `node-label ${type}`;
-                div.innerHTML = `<strong>${id}</strong><br><small>${type.toUpperCase()}</small>`;
-                div.style.backgroundColor = type === 'proc' ? CONFIG.NODE.PROC.labelBg : CONFIG.NODE.TABLE.labelBg;
-                return new THREE.CSS2DObject(div);
             }
 
             showTooltip(node) {
                 clearTimeout(node.userData.tooltipTimeout);
                 node.userData.tooltipTimeout = setTimeout(() => {
                     const tooltip = document.getElementById('tooltip');
-                    const pos = node.getWorldPosition(new THREE.Vector3());
-                    const mousePos = this.sceneManager.camera.projectVector(pos);
-
-                    tooltip.style.left = `${(mousePos.x * window.innerWidth) + 10}px`;
-                    tooltip.style.top = `${(mousePos.y * window.innerHeight) - 30}px`;
+                    // 获取节点的世界坐标
+                    const vector = new THREE.Vector3();
+                    node.getWorldPosition(vector);
+                    
+                    // 将3D坐标转换为屏幕坐标
+                    vector.project(this.sceneManager.camera);
+                    
+                    const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                    const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
+                    
+                    tooltip.style.left = `${x}px`;
+                    tooltip.style.top = `${y}px`;
                     tooltip.innerHTML = `
                         <h4>${node.userData.id}</h4>
-                        <p>类型：${node.userData.type.toUpperCase()}</p>
-                        <p>坐标：(${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})</p>
+                        <p>类型：${node.userData.type === 'proc' ? '存储过程' : '表'}</p>
                     `;
                     tooltip.style.display = 'block';
                 }, CONFIG.TOOLTIP_DELAY);
@@ -225,9 +265,22 @@
             }
 
             highlightNode(node) {
-                this.nodes.forEach(n => {
-                    n.mesh.material.opacity = n.mesh === node ? 1 : 0.6;
-                    n.label.style.opacity = n.mesh === node ? 1 : 0.7;
+                this.nodes.forEach((n, id) => {
+                    // 设置透明度
+                    if (!n.mesh.material.transparent) {
+                        n.mesh.material.transparent = true;
+                    }
+                    
+                    // 高亮选中的节点，其他节点半透明
+                    const isSelected = n.mesh === node;
+                    n.mesh.material.opacity = isSelected ? 1 : 0.4;
+                    
+                    // 调整标签样式
+                    if (n.label) {
+                        n.label.style.opacity = isSelected ? 1 : 0.6;
+                        n.label.style.fontSize = isSelected ? '16px' : '14px';
+                        n.label.style.fontWeight = isSelected ? 'bold' : 'normal';
+                    }
                 });
             }
 
@@ -270,8 +323,7 @@
         class VisualizationApp {
             constructor() {
                 this.sceneManager = new SceneManager(document.getElementById('container'));
-                this.nodeSystem = new NodeSystem(this.sceneManager.scene);
-                // 修复后：LinkSystem已定义
+                this.nodeSystem = new NodeSystem(this.sceneManager.scene, this.sceneManager);
                 this.linkSystem = new LinkSystem(this.sceneManager.scene); 
                 this.initEvents();
                 this.loadData();
@@ -287,14 +339,20 @@
             async loadData() {
                 const relation = document.getElementById('relationType').value;
                 const procFilter = document.getElementById('procFilter').value.trim();
+                const tableFilter = document.getElementById('tableFilter').value.trim();
 
                 this.nodeSystem.clear();
-                this.linkSystem.clear(); // 新增：清理连接线
+                this.linkSystem.clear();
 
                 try {
-                    const data = await fetch(`http://localhost:8000/api/graph3d?relation=${relation}&proc_name=${procFilter}`).then(r => r.json());
+                    // 添加表过滤参数
+                    const data = await fetch(`http://localhost:8000/api/graph3d?relation=${relation}&proc_name=${procFilter}&table_name=${tableFilter}`).then(r => r.json());
+                    
+                    // 创建节点
                     data.nodes.forEach(n => this.nodeSystem.createNode(n.id, n.type));
-                    data.links.forEach(l => { // 新增：创建连接线
+                    
+                    // 创建连接线
+                    data.links.forEach(l => {
                         const source = this.nodeSystem.nodes.get(l.source)?.mesh;
                         const target = this.nodeSystem.nodes.get(l.target)?.mesh;
                         if (source && target) this.linkSystem.createLink(source, target);
@@ -317,143 +375,3 @@
 </body>
 
 </html>
-
-<!-- <!DOCTYPE html>
-<html>
-<head>
-    <title>存储过程关系可视化</title>
-    <style>
-        /* 保持原有样式不变 */
-    </style>
-</head>
-<body>
-    <div class="control-panel">
-        <select id="relationType">
-            <option value="calls">调用关系</option>
-            <option value="tables">表关系</option>
-        </select>
-        <input type="text" id="filter" placeholder="过滤节点..." disabled>
-        <span id="loading" style="color: #666; margin-left: 10px;">加载中...</span>
-    </div>
-    <div id="canvas-container"></div>
-    <div class="tooltip" id="tooltip"></div>
-
-    <script>
-        const API_URL = 'http://localhost:8000/api/graph3d'; // 后端接口地址
-        let canvas, ctx, nodes = [], links = [];
-        let isLoading = false;
-
-        // 初始化
-        async function init() {
-            canvas = document.createElement('canvas');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            ctx = canvas.getContext('2d');
-            document.getElementById('canvas-container').appendChild(canvas);
-            
-            // 绑定事件（带防抖）
-            document.getElementById('relationType').addEventListener('change', debounce(fetchData, 300));
-            document.getElementById('filter').addEventListener('input', debounce(fetchData, 300));
-            
-            // 首次加载
-            await fetchData();
-        }
-
-        // 数据获取
-        async function fetchData() {
-            if (isLoading) return;
-            isLoading = true;
-            
-            try {
-                // 显示加载状态
-                document.getElementById('loading').style.display = 'inline-block';
-                document.querySelectorAll('select, input').forEach(el => el.disabled = true);
-
-                const params = new URLSearchParams({
-                    relation: document.getElementById('relationType').value,
-                    filter: document.getElementById('filter').value.trim()
-                });
-                const response = await fetch(`${API_URL}?${params}`);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                
-                const data = await response.json();
-                nodes = data.nodes.map(n => ({ ...n, x: n.x || 200, y: n.y || 150 })); // 初始化位置
-                links = data.links;
-                
-                render();
-            } catch (error) {
-                console.error('API请求失败:', error);
-                showError('数据加载失败，请检查接口连接');
-            } finally {
-                isLoading = false;
-                document.getElementById('loading').style.display = 'none';
-                document.querySelectorAll('select, input').forEach(el => el.disabled = false);
-            }
-        }
-
-        // 渲染函数
-        function render() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // 绘制连接线
-            ctx.strokeStyle = '#e0e0e0';
-            ctx.lineWidth = 1.5;
-            links.forEach(link => {
-                const s = nodes.find(n => n.id === link.source);
-                const t = nodes.find(n => n.id === link.target);
-                if (s && t) drawLine(s, t);
-            });
-
-            // 绘制节点
-            nodes.forEach(node => {
-                const { id, type, x, y } = node;
-                const size = type === 'proc' ? 32 : 28;
-                
-                // 节点背景
-                ctx.beginPath();
-                ctx[type === 'proc' ? 'arc' : 'rect'](x, y, size, size, 0, Math.PI * 2);
-                ctx.fillStyle = type === 'proc' ? '#4CAF50' : '#FF5722';
-                ctx.fill();
-                
-                // 节点边框
-                ctx.lineWidth = 2;
-                ctx.strokeStyle = '#fff';
-                ctx.stroke();
-                
-                // 标签文本（带阴影）
-                ctx.font = '14px Segoe UI';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.fillStyle = '#222';
-                ctx.fillText(id, x, y + size + 8);
-                ctx.font = '12px Segoe UI';
-                ctx.fillText(type.toUpperCase(), x, y + size + 22);
-            });
-        }
-
-        // 辅助函数
-        function drawLine(s, t) {
-            ctx.beginPath();
-            ctx.moveTo(s.x, s.y);
-            ctx.lineTo(t.x, t.y);
-            ctx.stroke();
-        }
-
-        function showError(msg) {
-            alert(msg); // 生产环境建议使用UI组件提示
-        }
-
-        // 防抖函数
-        function debounce(func, delay) {
-            let timer;
-            return (...args) => {
-                clearTimeout(timer);
-                timer = setTimeout(() => func.apply(this, args), delay);
-            };
-        }
-
-        // 初始化应用
-        init();
-    </script>
-</body>
-</html> -->
