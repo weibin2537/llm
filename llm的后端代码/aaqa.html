@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>🚀 EIKA 3D 调用图谱</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; }
+    #graph { width: 100%; height: 100%; }
+    #legend {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      color: white;
+      padding: 10px;
+      border-radius: 8px;
+      font-family: monospace;
+    }
+    #download-btn, #view-switch {
+      position: absolute;
+      top: 10px;
+      padding: 10px;
+      background: #00bfff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      font-family: monospace;
+    }
+    #download-btn { right: 10px; }
+    #view-switch { right: 150px; }
+  </style>
+</head>
+<body>
+<div id="graph"></div>
+<div id="legend">
+  <b>图例：</b><br>
+  <span style="color:#00ffff">■ 表</span><br>
+  <span style="color:#ffcc00">■ 存储过程</span><br>
+  <span>点击节点：高亮路径</span>
+</div>
+<button id="download-btn">⬇ 下载图谱</button>
+<button id="view-switch">🔄 切换图谱视图</button>
+
+<script src="https://cdn.jsdelivr.net/npm/3d-force-graph"></script>
+<script>
+  const graphEl = document.getElementById('graph');
+  const Graph = ForceGraph3D()(graphEl)
+    .nodeAutoColorBy('type')
+    .nodeThreeObject(node => {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        color: node.type === 'table' ? '#00ffff' : '#ffcc00'
+      }));
+      sprite.scale.set(12, 12, 1);
+      return sprite;
+    })
+    .nodeLabel(node => `${node.id}\n类型: ${node.type}`)
+    .linkLabel(link => link.label)
+    .linkDirectionalParticles(2)
+    .linkDirectionalParticleWidth(1.5)
+    .onNodeClick(node => {
+      const neighbors = new Set();
+
+      if (node.type === 'proc') {
+        graphData.links.forEach(l => {
+          if (l.source.id === node.id) neighbors.add(l.target.id);
+          if (l.target.id === node.id) neighbors.add(l.source.id);
+        });
+      } else if (node.type === 'table') {
+        graphData.links.forEach(l => {
+          if (l.source === node.id && l.label === '读取') neighbors.add(l.target);
+          if (l.target === node.id && l.label === '写入') neighbors.add(l.source);
+        });
+      }
+
+      Graph.nodeColor(n => {
+        if (n.id === node.id) return 'red';
+        if (neighbors.has(n.id)) return 'orange';
+        return n.type === 'table' ? '#00ffff' : '#ffcc00';
+      });
+    });
+
+  let graphData = null;
+  let currentView = 'full';
+
+  const loadGraph = (view) => {
+    fetch('/api/graph3d')
+      .then(res => res.json())
+      .then(data => {
+        graphData = data;
+        let filtered = data;
+
+        if (view === 'calls') {
+          filtered = {
+            nodes: data.nodes.filter(n => n.type === 'proc'),
+            links: data.links.filter(l => l.label === '调用')
+          };
+        } else if (view === 'tables') {
+          const tableIds = new Set();
+          data.links.forEach(l => {
+            if (l.label === '读取' || l.label === '写入') {
+              tableIds.add(l.source);
+              tableIds.add(l.target);
+            }
+          });
+          filtered = {
+            nodes: data.nodes.filter(n => tableIds.has(n.id)),
+            links: data.links.filter(l => l.label !== '调用')
+          };
+        }
+
+        Graph.graphData(filtered);
+      });
+  }
+
+  loadGraph(currentView);
+
+  // 导出图谱
+  document.getElementById('download-btn').addEventListener('click', () => {
+    const canvas = document.querySelector('canvas');
+    const link = document.createElement('a');
+    link.download = 'graph.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+
+  // 切换视图
+  document.getElementById('view-switch').addEventListener('click', () => {
+    currentView = currentView === 'full' ? 'calls' : currentView === 'calls' ? 'tables' : 'full';
+    loadGraph(currentView);
+    document.getElementById('view-switch').innerText =
+      currentView === 'full' ? '🔄 切换图谱视图' :
+      currentView === 'calls' ? '🔁 查看表结构图' :
+      '🔁 查看完整图谱';
+  });
+</script>
+</body>
+</html>
