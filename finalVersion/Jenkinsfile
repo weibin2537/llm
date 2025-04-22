@@ -1,0 +1,101 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = 'localhost:5000'
+        PROJECT_NAME = 'chatbox'
+        KUBECONFIG = '/var/jenkins_home/.kube/config'
+        HELM_RELEASE_NAME = 'chatbox'
+        HELM_CHART_DIR = './chatbox'
+        NAMESPACE = 'chatbox'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build Frontend') {
+            steps {
+                dir('frontend') {
+                    sh 'docker build -t ${DOCKER_REGISTRY}/${PROJECT_NAME}-frontend:${BUILD_NUMBER} -t ${DOCKER_REGISTRY}/${PROJECT_NAME}-frontend:latest .'
+                }
+            }
+        }
+
+        stage('Build Backend') {
+            steps {
+                dir('backend') { // Using the original directory name
+                    sh 'docker build -t ${DOCKER_REGISTRY}/${PROJECT_NAME}-backend:${BUILD_NUMBER} -t ${DOCKER_REGISTRY}/${PROJECT_NAME}-backend:latest .'
+                }
+            }
+        }
+
+        stage('Build Model Service') {
+            steps {
+                dir('deepseek') {
+                    sh 'docker build -t ${DOCKER_REGISTRY}/${PROJECT_NAME}-model:${BUILD_NUMBER} -t ${DOCKER_REGISTRY}/${PROJECT_NAME}-model:latest .'
+                }
+            }
+        }
+
+        stage('Push Images') {
+            steps {
+                sh 'docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-frontend:${BUILD_NUMBER}'
+                sh 'docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-frontend:latest'
+                sh 'docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-backend:${BUILD_NUMBER}'
+                sh 'docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-backend:latest'
+                sh 'docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-model:${BUILD_NUMBER}'
+                sh 'docker push ${DOCKER_REGISTRY}/${PROJECT_NAME}-model:latest'
+            }
+        }
+
+        stage('Create Namespace') {
+            steps {
+                sh 'kubectl --kubeconfig=${KUBECONFIG} create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl --kubeconfig=${KUBECONFIG} apply -f -'
+                sh 'kubectl --kubeconfig=${KUBECONFIG} label namespace ${NAMESPACE} istio-injection=enabled --overwrite'
+            }
+        }
+
+        stage('Deploy with Helm') {
+            steps {
+                sh '''
+                    helm --kubeconfig=${KUBECONFIG} upgrade --install ${HELM_RELEASE_NAME} ${HELM_CHART_DIR} \
+                    --namespace=${NAMESPACE} \
+                    --set frontend.image.tag=${BUILD_NUMBER} \
+                    --set backend.image.tag=${BUILD_NUMBER} \
+                    --set model.image.tag=${BUILD_NUMBER} \
+                    --set global.domain=myapp.local
+                '''
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh '''
+                    kubectl --kubeconfig=${KUBECONFIG} -n ${NAMESPACE} rollout status deployment/${PROJECT_NAME}-frontend
+                    kubectl --kubeconfig=${KUBECONFIG} -n ${NAMESPACE} rollout status deployment/${PROJECT_NAME}-backend
+                    kubectl --kubeconfig=${KUBECONFIG} -n ${NAMESPACE} rollout status deployment/${PROJECT_NAME}-model
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+        always {
+            // Clean up docker images to save space
+            sh '''
+                docker rmi ${DOCKER_REGISTRY}/${PROJECT_NAME}-frontend:${BUILD_NUMBER} || true
+                docker rmi ${DOCKER_REGISTRY}/${PROJECT_NAME}-backend:${BUILD_NUMBER} || true
+                docker rmi ${DOCKER_REGISTRY}/${PROJECT_NAME}-model:${BUILD_NUMBER} || true
+            '''
+        }
+    }

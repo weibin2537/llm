@@ -1,0 +1,51 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chatbox.frontend.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chatbox.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "chatbox.frontend.fullname" . }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "chatbox.frontend.fullname" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "chatbox.frontend.fullname" . }}
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+      - name: {{ include "chatbox.frontend.fullname" . }}
+        image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+        imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+        ports:
+        - containerPort: 3000
+          name: http
+        resources:
+          {{- toYaml .Values.frontend.resources | nindent 12 }}
+        env:
+        - name: REACT_APP_BACKEND_URL
+          value: "http://{{ include "chatbox.backend.fullname" . }}:{{ .Values.backend.service.port }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "chatbox.frontend.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chatbox.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "chatbox.frontend.fullname" . }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ include "chatbox.frontend.fullname" . }}
+  ports:
+    - protocol: TCP
+      port: {{ .Values.frontend.service.port }}
+      targetPort: {{ .Values.frontend.service.targetPort }}
+      name: http
+{{- end }}

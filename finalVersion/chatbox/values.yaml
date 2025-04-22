@@ -1,0 +1,73 @@
+global:
+  namespace: chatbox
+  domain: myapp.local
+
+frontend:
+  enabled: true
+  image:
+    repository: chatbox-frontend
+    tag: latest
+    pullPolicy: Never
+  service:
+    port: 80
+    targetPort: 3000
+  resources:
+    limits:
+      cpu: 300m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+backend:
+  enabled: true
+  image:
+    repository: localhost:5000/chatbox-backend
+    tag: latest
+    pullPolicy: Always
+  service:
+    port: 8000
+    targetPort: 8000
+  resources:
+    limits:
+      cpu: 300m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+model:
+  enabled: true
+  image:
+    repository: localhost:5000/chatbox-model
+    tag: latest
+    pullPolicy: Always
+  service:
+    port: 11434
+    targetPort: 11434
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+istio:
+  enabled: true
+  gateway:
+    name: chatbox-gateway
+    selector:
+      istio: ingressgateway
+  hosts:
+    - myapp.local  # 注意这里使用了破折号，表示列表的一个元素
+
+monitoring:
+  enabled: true
+  prometheus:
+    scrapeInterval: 15s
+  alertRules:
+    cpuUsage:
+      threshold: 80
+    memoryUsage:
+      threshold: 80

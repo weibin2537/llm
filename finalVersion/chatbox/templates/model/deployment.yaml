@@ -1,0 +1,69 @@
+{{- if .Values.model.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chatbox.model.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chatbox.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "chatbox.model.fullname" . }}
+spec:
+  replicas: {{ .Values.model.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "chatbox.model.fullname" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "chatbox.model.fullname" . }}
+      annotations:
+        sidecar.istio.io/inject: "true"
+        prometheus.io/port: "11434"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: {{ include "chatbox.model.fullname" . }}
+        image: "{{ .Values.model.image.repository }}:{{ .Values.model.image.tag }}"
+        imagePullPolicy: {{ .Values.model.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.model.service.targetPort }}
+          name: http
+        resources:
+          {{- toYaml .Values.model.resources | nindent 12 }}
+        volumeMounts:
+        - name: model-data
+          mountPath: /root/.ollama
+      volumes:
+      - name: model-data
+        persistentVolumeClaim:
+          claimName: {{ include "chatbox.model.fullname" . }}-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "chatbox.model.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chatbox.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "chatbox.model.fullname" . }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ include "chatbox.model.fullname" . }}
+  ports:
+    - protocol: TCP
+      port: {{ .Values.model.service.port }}
+      targetPort: {{ .Values.model.service.targetPort }}
+      name: http
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "chatbox.model.fullname" . }}-pvc
+  namespace: {{ .Release.Namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+{{- end }}

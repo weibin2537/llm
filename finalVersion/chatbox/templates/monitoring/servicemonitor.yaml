@@ -1,0 +1,35 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "chatbox.name" . }}-monitor
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chatbox.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "chatbox.name" . }}-monitor
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "chatbox.backend.fullname" . }}
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: {{ .Values.monitoring.prometheus.scrapeInterval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "chatbox.name" . }}-model-monitor
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chatbox.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "chatbox.name" . }}-model-monitor
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "chatbox.model.fullname" . }}
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: {{ .Values.monitoring.prometheus.scrapeInterval }}
+{{- end }}

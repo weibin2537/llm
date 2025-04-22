@@ -1,0 +1,49 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "chatbox.name" . }}-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chatbox.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "chatbox.name" . }}-alerts
+spec:
+  groups:
+  - name: chatbox.rules
+    rules:
+    - alert: HighCPUUsage
+      expr: sum(rate(container_cpu_usage_seconds_total{namespace="{{ .Release.Namespace }}",pod=~"{{ include "chatbox.name" . }}.*"}[5m])) by (pod) / sum(container_spec_cpu_quota{namespace="{{ .Release.Namespace }}",pod=~"{{ include "chatbox.name" . }}.*"}) by (pod) > {{ .Values.monitoring.alertRules.cpuUsage.threshold }} / 100
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High CPU usage on pod {{ "{{ $labels.pod }}" }}"
+        description: "Pod {{ "{{ $labels.pod }}" }} is using more than {{ .Values.monitoring.alertRules.cpuUsage.threshold }}% of its CPU quota for more than 5 minutes."
+
+    - alert: HighMemoryUsage
+      expr: sum(container_memory_usage_bytes{namespace="{{ .Release.Namespace }}",pod=~"{{ include "chatbox.name" . }}.*"}) by (pod) / sum(container_spec_memory_limit_bytes{namespace="{{ .Release.Namespace }}",pod=~"{{ include "chatbox.name" . }}.*"}) by (pod) > {{ .Values.monitoring.alertRules.memoryUsage.threshold }} / 100
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage on pod {{ "{{ $labels.pod }}" }}"
+        description: "Pod {{ "{{ $labels.pod }}" }} is using more than {{ .Values.monitoring.alertRules.memoryUsage.threshold }}% of its memory limit for more than 5 minutes."
+
+    - alert: HighResponseLatency
+      expr: histogram_quantile(0.9, sum(rate(chatbox_request_latency_seconds_bucket{namespace="{{ .Release.Namespace }}"}[5m])) by (le)) > 5
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High response latency"
+        description: "90% of requests are taking more than 5 seconds to complete."
+
+    - alert: HighErrorRate
+      expr: sum(rate(chatbox_request_count{namespace="{{ .Release.Namespace }}", status_code=~"5.."}[5m])) / sum(rate(chatbox_request_count{namespace="{{ .Release.Namespace }}"}[5m])) > 0.1
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High error rate"
+        description: "More than 10% of requests are resulting in 5xx errors."
+{{- end }}
