@@ -5,9 +5,9 @@ global:
 frontend:
   enabled: true
   image:
-    repository: chatbox-frontend
+    repository: localhost:5000/chatbox-frontend
     tag: latest
-    pullPolicy: Never
+    pullPolicy: Always
   service:
     port: 80
     targetPort: 3000
@@ -60,7 +60,7 @@ istio:
     selector:
       istio: ingressgateway
   hosts:
-    - myapp.local  # 注意这里使用了破折号，表示列表的一个元素
+    - myapp.local
 
 monitoring:
   enabled: true

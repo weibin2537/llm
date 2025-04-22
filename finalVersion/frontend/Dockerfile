@@ -15,11 +15,19 @@ COPY public/ ./public
 COPY src/ ./src
 COPY .husky/ .husky/
 
+# 创建一个环境变量默认值
+ENV REACT_APP_BACKEND_URL=http://chatbox-backend:8000
+
 # 构建前端应用
 RUN yarn build
 
+# 添加启动脚本来处理环境变量
+RUN echo '#!/bin/sh \n\
+# Use a simple HTTP server instead of React dev server in production \n\
+npx serve -s build -l 3000' > /app/start.sh && chmod +x /app/start.sh
+
 # 启动前端应用
-CMD ["yarn", "start"]
+CMD ["/app/start.sh"]
 
 # 暴露端口
 EXPOSE 3000

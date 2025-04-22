@@ -33,12 +33,15 @@ app.mount("/metrics", metrics_app)
 # Configure CORS
 origins = [
     "http://localhost:3000",
+    "http://localhost",
+    "http://myapp.local",
+    "http://chatbox-frontend",
     os.environ.get("FRONTEND_URL", "http://chatbox-frontend"),
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # Temporarily allow all origins for debugging
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

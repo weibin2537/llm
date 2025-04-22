@@ -31,7 +31,9 @@ spec:
   http:
   - match:
     - uri:
-        prefix: /chat
+        exact: /chat
+    - uri:
+        prefix: /chat/
     route:
     - destination:
         host: {{ include "chatbox.backend.fullname" . }}
@@ -39,7 +41,9 @@ spec:
           number: {{ .Values.backend.service.port }}
   - match:
     - uri:
-        prefix: /api
+        exact: /api
+    - uri:
+        prefix: /api/
     route:
     - destination:
         host: {{ include "chatbox.model.fullname" . }}
