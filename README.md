@@ -23,3 +23,5 @@ chatbox/
     └── dependencies if needed
 
     系统架构
+
+add cicd

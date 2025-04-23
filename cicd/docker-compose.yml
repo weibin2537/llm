@@ -10,6 +10,8 @@ services:
       - cicd-network
     volumes:
       - jenkins_home:/var/jenkins_home
+      - ~/.kube:/var/jenkins_home/.kube  # 挂载 kubeconfig
+      - /var/run/docker.sock:/var/run/docker.sock  # 访问 Docker socket
     environment:
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
 
