@@ -1,48 +1,45 @@
-# FROM ubuntu:20.04
-
-# # 安装必要的依赖
-# RUN apt-get update && apt-get install -y curl bash
-
-# # 安装 ollama
-# RUN curl -fsSL https://ollama.com/install.sh | sh
-
-# # 创建启动脚本
-# RUN echo '#!/bin/bash\n\
-#           # 启动 ollama 服务\n\
-#           ollama start &\n\
-#           # 等待 ollama 启动完成\n\
-#           until nc -zv 127.0.0.1 11434; do echo "Waiting for ollama to start..."; sleep 2; done\n\
-#           # 运行 deepseek 模型\n\
-#           ollama run deepseek-r1:7b' > /start-model.sh
-
 FROM ubuntu:20.04
 
-# 安装必要的依赖
+# Install necessary dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     bash \
     netcat \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装Ollama
+# Install Ollama
 RUN curl -fsSL https://ollama.com/install.sh | sh
 
-# 创建启动脚本
+# Create startup script with OLLAMA_HOST set to listen on all interfaces
 RUN echo '#!/bin/bash\n\
-# 启动Ollama服务\n\
-ollama start &\n\
-# 等待Ollama启动\n\
-until nc -zv 127.0.0.1 11434; do echo "Waiting for ollama to start..."; sleep 2; done\n\
-# 拉取模型\n\
-ollama pull deepseek-r1:7b\n\
-# 保持容器运行，这很重要\n\
+# Set environment variables to make Ollama listen on all interfaces\n\
+export OLLAMA_HOST=0.0.0.0:11434\n\
+\n\
+# Start Ollama service\n\
+ollama serve &\n\
+\n\
+# Wait for Ollama to start\n\
+echo "Waiting for ollama to start..."\n\
+until nc -z 0.0.0.0 11434; do\n\
+  echo "Waiting for ollama to start..."\n\
+  sleep 2\n\
+done\n\
+\n\
+echo "Ollama service started successfully!"\n\
+\n\
+# Pull tinyllama model (the smallest and fastest to load)\n\
+echo "Pulling tinyllama model..."\n\
+ollama pull tinyllama\n\
+\n\
+# Keep container running\n\
 tail -f /dev/null' > /start-model.sh
 
-# 使脚本可执行
+# Make script executable
 RUN chmod +x /start-model.sh
 
-# 设置启动时执行脚本
+# Set startup command
 CMD ["/start-model.sh"]
 
-# 暴露端口
+# Expose port
 EXPOSE 11434

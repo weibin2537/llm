@@ -1,0 +1,6 @@
+{
+  "gpu_layers": 0,
+  "num_ctx": 1024,  // 显著降低上下文长度
+  "num_batch": 256, // 减小批处理大小
+  "num_thread": 6
+}
